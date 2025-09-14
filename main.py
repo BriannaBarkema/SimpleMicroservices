@@ -14,6 +14,8 @@ from typing import Optional
 from models.person import PersonCreate, PersonRead, PersonUpdate
 from models.address import AddressCreate, AddressRead, AddressUpdate
 from models.health import Health
+from models.family_history import FamilyHistoryCreate, FamilyHistoryRead, FamilyHistoryUpdate
+from models.account_balance import AccountBalanceCreate, AccountBalanceRead, AccountBalanceUpdate
 
 port = int(os.environ.get("FASTAPIPORT", 8000))
 
@@ -21,6 +23,8 @@ port = int(os.environ.get("FASTAPIPORT", 8000))
 # Fake in-memory "databases"
 # -----------------------------------------------------------------------------
 persons: Dict[UUID, PersonRead] = {}
+family_histories: Dict[UUID, FamilyHistoryRead] = {}
+account_balances: Dict[UUID, AccountBalanceRead] = {}
 addresses: Dict[UUID, AddressRead] = {}
 
 app = FastAPI(
@@ -28,6 +32,88 @@ app = FastAPI(
     description="Demo FastAPI app using Pydantic v2 models for Person and Address",
     version="0.1.0",
 )
+
+# -----------------------------------------------------------------------------
+# Family History endpoints
+# -----------------------------------------------------------------------------
+@app.post("/family-histories", response_model=FamilyHistoryRead, status_code=201)
+def create_family_history(family_history: FamilyHistoryCreate) -> FamilyHistoryRead:
+    if family_history.id in family_histories:
+        raise HTTPException(status_code=400, detail="Family History with this ID already exists")
+    history_read = FamilyHistoryRead(**family_history.model_dump())
+    family_histories[history_read.id] = history_read
+    return family_histories[history_read.id]
+
+@app.get("/family-histories", response_model=List[FamilyHistoryRead])
+def get_family_histories(
+    father: Optional[str] = Query(None, description="Filter by father's health history"),
+    mother: Optional[str] = Query(None, description="Filter by mother's health history"),
+    sister: Optional[str] = Query(None, description="Filter by sister's health history"),
+    brother: Optional[str] = Query(None, description="Filter by brother's health history"),
+):
+    results = list(family_histories.values())
+
+    if father is not None:
+        results = [p for p in results if p.father == father]
+    if mother is not None:
+        results = [p for p in results if p.mother == mother]
+    if sister is not None:
+        results = [p for p in results if p.sister == sister]
+    if brother is not None:
+        results = [p for p in results if p.brother == brother]
+
+    return results
+
+@app.get("/family-histories/{history_id}", response_model=FamilyHistoryRead)
+def get_family_history(history_id: UUID):
+    if history_id not in family_histories:
+        raise HTTPException(status_code=404, detail="Family history not found")
+    return family_histories[history_id]
+
+@app.patch("/family-histories/{history_id}", response_model=FamilyHistoryRead)
+def update_family_history(history_id: UUID, update: FamilyHistoryUpdate):
+    if history_id not in family_histories:
+        raise HTTPException(status_code=404, detail="Family history not found")
+    stored = family_histories[history_id].model_dump()
+    stored.update(update.model_dump(exclude_unset=True))
+    family_histories[history_id] = FamilyHistoryRead(**stored)
+    return family_histories[history_id]
+
+# -----------------------------------------------------------------------------
+# Account Balance endpoints
+# -----------------------------------------------------------------------------
+@app.post("/account-balances", response_model=AccountBalanceRead, status_code=201)
+def create_account_balance(account_balance: AccountBalanceCreate) -> AccountBalanceRead:
+    # Each person gets its own UUID; stored as PersonRead
+    balance_read = AccountBalanceRead(**account_balance.model_dump())
+    account_balances[balance_read.id] = balance_read
+    return account_balances[balance_read.id]
+
+@app.get("/account-balances", response_model=List[AccountBalanceRead])
+def get_account_balance(
+    account_balance: float = Query(None, description="Filter by balance"),
+):
+    results = list(account_balances.values())
+
+    if account_balance is not None:
+        results = [p for p in results if p.account_balance == account_balance]
+
+    return results
+
+@app.get("/account-balances/{account_id}", response_model=AccountBalanceRead)
+def get_account_balances(account_id: UUID):
+    if account_id not in account_balances:
+        raise HTTPException(status_code=404, detail="Account balance not found")
+    return account_balances[account_id]
+
+@app.patch("/account-balances/{account_id}", response_model=AccountBalanceRead)
+def update_account_balance(account_id: UUID, update: AccountBalanceUpdate):
+    if account_id not in account_balances:
+        raise HTTPException(status_code=404, detail="Account balance not found")
+    stored = account_balances[account_id].model_dump()
+    stored.update(update.model_dump(exclude_unset=True))
+    account_balances[account_id] = AccountBalanceRead(**stored)
+    return account_balances[account_id]
 
 # -----------------------------------------------------------------------------
 # Address endpoints
@@ -45,7 +131,6 @@ def make_health(echo: Optional[str], path_echo: Optional[str]=None) -> Health:
 
 @app.get("/health", response_model=Health)
 def get_health_no_path(echo: str | None = Query(None, description="Optional echo string")):
-    # Works because path_echo is optional in the model
     return make_health(echo=echo, path_echo=None)
 
 @app.get("/health/{path_echo}", response_model=Health)
